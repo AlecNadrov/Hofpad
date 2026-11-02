@@ -70,8 +70,6 @@ void CodeEditor::resizeEvent(QResizeEvent *e)
 
 void CodeEditor::insertFromMimeData(const QMimeData *source)
 {
-    // Перехватываем drop файлов из файлового менеджера: вместо вставки
-    // пути как текста — сигналим MainWindow, что нужно открыть файл.
     if (source && source->hasUrls()) {
         bool handled = false;
         for (const QUrl &url : source->urls()) {

@@ -397,8 +397,6 @@ void MainWindow::openFilePath(const QString &filePath)
     QString content = in.readAll();
     file.close();
 
-    // Переиспользуем текущий таб, если он пустой и без пути — чтобы не
-    // плодить "Untitled N" при открытии файла в свежем окне.
     CodeEditor *editor = currentEditor();
     const bool reuseCurrent = editor
         && editor->property("filePath").toString().isEmpty()
