@@ -13,7 +13,6 @@ QSize LineNumberArea::sizeHint() const {
 void LineNumberArea::paintEvent(QPaintEvent *event) {
     codeEditor->lineNumberAreaPaintEvent(event);
 }
-// ----------------------------------
 
 CodeEditor::CodeEditor(QWidget *parent) : QPlainTextEdit(parent)
 {

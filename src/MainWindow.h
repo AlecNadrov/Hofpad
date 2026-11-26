@@ -7,6 +7,7 @@
 
 class QSplitter;
 class QListWidget;
+class QListWidgetItem;
 class QStackedWidget;
 class QLabel;
 class QMenu;
@@ -65,10 +66,10 @@ private:
 
     CodeEditor* currentEditor() const;
     void updateTabTitle(CodeEditor *editor);
+    void sortTabs();
     bool maybeSave(CodeEditor *editor);
     bool saveEditor(CodeEditor *editor);
     bool saveToPath(CodeEditor *editor, const QString &filePath);
-    void removeTab(int index);
     void openFilePath(const QString &filePath);
 
     void applySettings();
@@ -79,4 +80,4 @@ private:
     void saveSession();
 };
 
-#endif // MAINWINDOW_H
+#endif

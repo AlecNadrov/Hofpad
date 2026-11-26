@@ -56,4 +56,4 @@ private:
     bool     m_caseSensitive = false;
 };
 
-#endif // CODEEDITOR_H
+#endif

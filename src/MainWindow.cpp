@@ -27,6 +27,16 @@
 #include <QToolBar>
 #include <QLineEdit>
 #include <QTimer>
+#include <QTabWidget>
+#include <QTextBrowser>
+#include <QJsonArray>
+#include <QJsonObject>
+#include <QJsonDocument>
+#include <QVBoxLayout>
+#include <QHBoxLayout>
+#include <QCoreApplication>
+#include <QPushButton>
+#include <algorithm>
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
@@ -127,7 +137,6 @@ MainWindow::MainWindow(QWidget *parent)
 
     m_caseSensitiveAct = m_toolBar->addAction("Aa");
     m_caseSensitiveAct->setCheckable(true);
-    m_caseSensitiveAct->setToolTip("Учитывать регистр");
 
     m_searchPrevAct = m_toolBar->addAction("▲");
     m_searchNextAct = m_toolBar->addAction("▼");
@@ -172,15 +181,36 @@ MainWindow::MainWindow(QWidget *parent)
 
     setCentralWidget(m_splitter);
 
-    connect(m_sidebar, &QListWidget::currentRowChanged, m_editors, &QStackedWidget::setCurrentIndex);
+    connect(m_sidebar, &QListWidget::currentRowChanged, this, [this](int row) {
+        if (row < 0 || row >= m_sidebar->count()) return;
+        QListWidgetItem *item = m_sidebar->item(row);
+        QObject *obj = item->data(Qt::UserRole).value<QObject*>();
+        if (CodeEditor *ed = qobject_cast<CodeEditor*>(obj)) {
+            m_editors->setCurrentWidget(ed);
+        }
+    });
+    
     connect(m_sidebar, &QListWidget::customContextMenuRequested, this, [this](const QPoint &pos){
         QListWidgetItem *item = m_sidebar->itemAt(pos);
         if (!item) return;
+        
+        QObject *obj = item->data(Qt::UserRole).value<QObject*>();
+        CodeEditor *ed = qobject_cast<CodeEditor*>(obj);
+        if (!ed) return;
+
         QMenu contextMenu(this);
+        
+        bool isPinned = ed->property("isPinned").toBool();
+        QAction *pinAction = contextMenu.addAction(isPinned ? "Открепить вкладку" : "Закрепить вкладку");
+        connect(pinAction, &QAction::triggered, this, [this, ed]() {
+            bool newState = !ed->property("isPinned").toBool();
+            ed->setProperty("isPinned", newState);
+            updateTabTitle(ed);
+        });
+
         QAction *closeAction = contextMenu.addAction("Закрыть");
         connect(closeAction, &QAction::triggered, this, [this, item]() {
-            int row = m_sidebar->row(item);
-            m_sidebar->setCurrentRow(row);
+            m_sidebar->setCurrentItem(item);
             closeCurrentTab();
         });
         contextMenu.exec(m_sidebar->mapToGlobal(pos));
@@ -206,14 +236,13 @@ MainWindow::MainWindow(QWidget *parent)
     bool remember = settings.value("session/remember", true).toBool();
     if (remember) {
         loadSession();
-        if (m_editors->count() == 0) addNewTab();
+        if (m_sidebar->count() == 0) addNewTab();
     } else {
         addNewTab();
     }
 }
 
 MainWindow::~MainWindow() {}
-
 
 void MainWindow::showSearchBar()
 {
@@ -288,7 +317,16 @@ void MainWindow::applySettingsTo(CodeEditor *editor)
 
     editor->setFont(font);
     editor->document()->setDefaultFont(font);
-    editor->setLineWrapMode(wordWrap ? QPlainTextEdit::WidgetWidth : QPlainTextEdit::NoWrap);
+    
+    if (wordWrap) {
+        editor->setLineWrapMode(QPlainTextEdit::WidgetWidth);
+        editor->setWordWrapMode(QTextOption::WrapAtWordBoundaryOrAnywhere);
+        editor->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    } else {
+        editor->setLineWrapMode(QPlainTextEdit::NoWrap);
+        editor->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+    }
+    
     editor->refreshLineNumberArea();
 }
 
@@ -300,31 +338,80 @@ void MainWindow::applySettings()
     }
 }
 
+void MainWindow::sortTabs()
+{
+    QListWidgetItem *current = m_sidebar->currentItem();
+    QList<QListWidgetItem*> items;
+    for (int i = 0; i < m_sidebar->count(); ++i) items.append(m_sidebar->item(i));
+
+    std::stable_sort(items.begin(), items.end(), [](QListWidgetItem *a, QListWidgetItem *b) {
+        bool pinA = a->data(Qt::UserRole + 1).toBool();
+        bool pinB = b->data(Qt::UserRole + 1).toBool();
+        return pinA > pinB;
+    });
+
+    m_sidebar->blockSignals(true);
+    while (m_sidebar->count() > 0) m_sidebar->takeItem(0);
+    for (QListWidgetItem *item : items) m_sidebar->addItem(item);
+    m_sidebar->blockSignals(false);
+
+    if (current) m_sidebar->setCurrentItem(current);
+}
+
 void MainWindow::saveSession()
 {
     QSettings settings;
     if (!settings.value("session/remember", true).toBool()) {
+        settings.remove("session/files_json");
         settings.remove("session/files");
         return;
     }
 
-    QStringList openFiles;
-    for (int i = 0; i < m_editors->count(); ++i) {
-        CodeEditor *editor = qobject_cast<CodeEditor*>(m_editors->widget(i));
+    QJsonArray sessionArray;
+    for (int i = 0; i < m_sidebar->count(); ++i) {
+        QListWidgetItem *item = m_sidebar->item(i);
+        QObject *obj = item->data(Qt::UserRole).value<QObject*>();
+        CodeEditor *editor = qobject_cast<CodeEditor*>(obj);
         if (editor) {
             QString path = editor->property("filePath").toString();
-            if (!path.isEmpty()) openFiles.append(path);
+            if (!path.isEmpty()) {
+                QJsonObject fileObj;
+                fileObj["path"] = path;
+                fileObj["pinned"] = editor->property("isPinned").toBool();
+                sessionArray.append(fileObj);
+            }
         }
     }
-    settings.setValue("session/files", openFiles);
+    QJsonDocument doc(sessionArray);
+    settings.setValue("session/files_json", doc.toJson(QJsonDocument::Compact));
 }
 
 void MainWindow::loadSession()
 {
     QSettings settings;
-    QStringList openFiles = settings.value("session/files").toStringList();
-    for (const QString &path : openFiles) {
-        openFilePath(path);
+    QByteArray jsonData = settings.value("session/files_json").toByteArray();
+    
+    if (!jsonData.isEmpty()) {
+        QJsonDocument doc = QJsonDocument::fromJson(jsonData);
+        QJsonArray sessionArray = doc.array();
+        for (const QJsonValue &value : sessionArray) {
+            QJsonObject fileObj = value.toObject();
+            QString path = fileObj["path"].toString();
+            bool pinned = fileObj["pinned"].toBool();
+            
+            openFilePath(path);
+            
+            CodeEditor *ed = currentEditor();
+            if (ed && ed->property("filePath").toString() == path) {
+                ed->setProperty("isPinned", pinned);
+                updateTabTitle(ed);
+            }
+        }
+    } else {
+        QStringList openFiles = settings.value("session/files").toStringList();
+        for (const QString &path : openFiles) {
+            openFilePath(path);
+        }
     }
 }
 
@@ -373,8 +460,9 @@ void MainWindow::openFilePath(const QString &filePath)
 {
     const QString canonical = QFileInfo(filePath).canonicalFilePath();
     if (!canonical.isEmpty()) {
-        for (int i = 0; i < m_editors->count(); ++i) {
-            CodeEditor *ed = qobject_cast<CodeEditor*>(m_editors->widget(i));
+        for (int i = 0; i < m_sidebar->count(); ++i) {
+            QObject *obj = m_sidebar->item(i)->data(Qt::UserRole).value<QObject*>();
+            CodeEditor *ed = qobject_cast<CodeEditor*>(obj);
             if (!ed) continue;
             const QString openPath = ed->property("filePath").toString();
             if (openPath.isEmpty()) continue;
@@ -432,19 +520,22 @@ void MainWindow::openFile()
 }
 
 CodeEditor* MainWindow::currentEditor() const {
-    return qobject_cast<CodeEditor*>(m_editors->currentWidget());
+    QListWidgetItem *item = m_sidebar->currentItem();
+    if (!item) return nullptr;
+    QObject *obj = item->data(Qt::UserRole).value<QObject*>();
+    return qobject_cast<CodeEditor*>(obj);
 }
 
 void MainWindow::addNewTab()
 {
     m_tabCounter++;
     QString tabName = QString("Untitled %1").arg(m_tabCounter);
-    m_sidebar->addItem(tabName);
-
+    
     CodeEditor *newEditor = new CodeEditor(m_editors);
     newEditor->setPlaceholderText("Начни печатать...");
     newEditor->setProperty("tabName", tabName);
     newEditor->setProperty("filePath", "");
+    newEditor->setProperty("isPinned", false);
     newEditor->setSearchCaseSensitive(m_caseSensitiveAct->isChecked());
 
     connect(newEditor->document(), &QTextDocument::modificationChanged,
@@ -454,8 +545,12 @@ void MainWindow::addNewTab()
 
     m_editors->addWidget(newEditor);
 
-    int newIndex = m_editors->count() - 1;
-    m_sidebar->setCurrentRow(newIndex);
+    QListWidgetItem *item = new QListWidgetItem(tabName);
+    item->setData(Qt::UserRole, QVariant::fromValue(static_cast<QObject*>(newEditor)));
+    item->setData(Qt::UserRole + 1, false);
+    m_sidebar->addItem(item);
+
+    m_sidebar->setCurrentItem(item);
 
     applySettingsTo(newEditor);
 
@@ -525,15 +620,30 @@ bool MainWindow::saveFileAs()
 
 void MainWindow::updateTabTitle(CodeEditor *editor)
 {
-    int index = m_editors->indexOf(editor);
-    if (index == -1) return;
+    QListWidgetItem *item = nullptr;
+    for (int i = 0; i < m_sidebar->count(); ++i) {
+        QObject *obj = m_sidebar->item(i)->data(Qt::UserRole).value<QObject*>();
+        if (obj == editor) {
+            item = m_sidebar->item(i);
+            break;
+        }
+    }
+    if (!item) return;
 
     QString tabName = editor->property("tabName").toString();
+    bool isPinned = editor->property("isPinned").toBool();
+    
+    if (isPinned) {
+        tabName = "● " + tabName; 
+    }
+
     if (editor->document()->isModified()) {
         tabName += " *";
     }
-    if (QListWidgetItem *item = m_sidebar->item(index))
-        item->setText(tabName);
+    item->setText(tabName);
+    
+    item->setData(Qt::UserRole + 1, isPinned);
+    sortTabs();
 }
 
 bool MainWindow::maybeSave(CodeEditor *editor)
@@ -552,48 +662,38 @@ bool MainWindow::maybeSave(CodeEditor *editor)
 
 void MainWindow::closeCurrentTab()
 {
-    int index = m_editors->currentIndex();
-    if (index == -1) return;
+    QListWidgetItem *item = m_sidebar->currentItem();
+    if (!item) return;
 
-    CodeEditor *editor = qobject_cast<CodeEditor*>(m_editors->widget(index));
+    QObject *obj = item->data(Qt::UserRole).value<QObject*>();
+    CodeEditor *editor = qobject_cast<CodeEditor*>(obj);
     if (!editor) return;
 
     if (maybeSave(editor)) {
-        removeTab(index);
-    }
-}
-
-void MainWindow::removeTab(int index)
-{
-    QWidget *editor = m_editors->widget(index);
-    if (editor) {
         m_editors->removeWidget(editor);
         delete editor;
+        
+        int row = m_sidebar->row(item);
+        delete m_sidebar->takeItem(row);
+
+        if (m_sidebar->count() == 0) {
+            this->close();
+        }
     }
-
-    if (QListWidgetItem *item = m_sidebar->takeItem(index))
-        delete item;
-
-    if (m_editors->count() == 0) {
-        this->close();
-        return;
-    }
-
-    const int newRow = qBound(0, index, m_editors->count() - 1);
-    m_sidebar->setCurrentRow(newRow);
-    m_editors->setCurrentIndex(newRow);
 }
 
 void MainWindow::closeEvent(QCloseEvent *event)
 {
-    const int originalIndex = m_editors->currentIndex();
+    QListWidgetItem *originalItem = m_sidebar->currentItem();
 
-    for (int i = 0; i < m_editors->count(); ++i) {
-        CodeEditor *editor = qobject_cast<CodeEditor*>(m_editors->widget(i));
+    for (int i = 0; i < m_sidebar->count(); ++i) {
+        QListWidgetItem *item = m_sidebar->item(i);
+        QObject *obj = item->data(Qt::UserRole).value<QObject*>();
+        CodeEditor *editor = qobject_cast<CodeEditor*>(obj);
         if (editor) {
-            m_sidebar->setCurrentRow(i);
+            m_sidebar->setCurrentItem(item);
             if (!maybeSave(editor)) {
-                m_sidebar->setCurrentRow(originalIndex);
+                m_sidebar->setCurrentItem(originalItem);
                 event->ignore();
                 return;
             }
@@ -617,21 +717,103 @@ void MainWindow::updateStatusBar()
 
 void MainWindow::showAboutDialog()
 {
-    QString aboutText = QString(
-        "<h2>Hofpad</h2>"
-        "<p><b>Версия:</b> 0.1.0 Linyphiidae</p>"
-        "<p><b>Разработчик:</b> AlecNadrov</p>"
-        "<p><b>Лицензия:</b> Open Source (GPLv3)</p>"
-        "<br>"
-        "<p><i>Легковесный текстовый редактор</i></p>"
-    );
+    QDialog dialog(this);
+    dialog.setWindowTitle("О программе");
+    dialog.resize(500, 450);
 
-    QMessageBox msgBox(this);
-    msgBox.setWindowTitle("О программе");
-    msgBox.setText(aboutText);
+    dialog.setStyleSheet(R"(
+        QDialog { background-color: #1e1e1e; }
+        QTabWidget::pane { border: 1px solid #333333; background-color: #1e1e1e; }
+        QTabBar::tab { background-color: #2a2d2e; color: #969696; padding: 8px 16px; border: 1px solid #333333; border-bottom: none; }
+        QTabBar::tab:selected { background-color: #1e1e1e; color: #ffffff; }
+        QTextBrowser { background-color: transparent; color: #d4d4d4; border: none; }
+        QLabel { color: #d4d4d4; }
+        QPushButton { background-color: #3c3c3c; color: #ffffff; border: 1px solid #555555; padding: 4px 12px; border-radius: 4px; }
+        QPushButton:hover { background-color: #4c4c4c; }
+    )");
+
+    QVBoxLayout *layout = new QVBoxLayout(&dialog);
+    
+    QHBoxLayout *headerLayout = new QHBoxLayout();
+    QLabel *iconLabel = new QLabel();
     QPixmap logo(":/hofpadwhite.png");
     if (!logo.isNull()) {
-        msgBox.setIconPixmap(logo.scaled(120, 120, Qt::KeepAspectRatio, Qt::SmoothTransformation));
+        iconLabel->setPixmap(logo.scaled(64, 64, Qt::KeepAspectRatio, Qt::SmoothTransformation));
     }
-    msgBox.exec();
+    QLabel *titleLabel = new QLabel(QString("<h2 style='margin: 0;'>Hofpad %1</h2>").arg(QCoreApplication::applicationVersion()));
+    titleLabel->setStyleSheet("color: #ffffff;");
+    
+    headerLayout->addWidget(iconLabel);
+    headerLayout->addWidget(titleLabel);
+    headerLayout->addStretch();
+    layout->addLayout(headerLayout);
+
+    QTabWidget *tabs = new QTabWidget(&dialog);
+    
+    QWidget *infoTab = new QWidget();
+    QVBoxLayout *infoLayout = new QVBoxLayout(infoTab);
+    QLabel *infoLabel = new QLabel(
+        "<p align='center'><b>Легковесный текстовый редактор</b></p>"
+        "<p align='center'>\"Linyphiidae\"</p>"
+        "<p align='center'>Использует C++17 и Qt 6</p>"
+        "<p align='center'><b>Разработчик:</b> AlecNadrov</p>"
+        "<p align='center'><a href='https://github.com/AlecNadrov/Hofpad'>https://github.com/AlecNadrov/Hofpad</a></p>"
+    );
+    infoLabel->setOpenExternalLinks(true);
+    infoLabel->setAlignment(Qt::AlignCenter);
+    infoLayout->addStretch();
+    infoLayout->addWidget(infoLabel);
+    infoLayout->addStretch();
+   
+    QWidget *shortcutsTab = new QWidget();
+    QVBoxLayout *shortcutsLayout = new QVBoxLayout(shortcutsTab);
+    QTextBrowser *shortcutsBrowser = new QTextBrowser();
+    shortcutsBrowser->setHtml(
+        "<h3>Работа с файлами</h3>"
+        "<ul>"
+        "<li><b>Ctrl + T</b> — Новая вкладка</li>"
+        "<li><b>Ctrl + O</b> — Открыть файл</li>"
+        "<li><b>Ctrl + S</b> — Сохранить</li>"
+        "<li><b>Ctrl + Shift + S</b> — Сохранить как...</li>"
+        "<li><b>Ctrl + W</b> — Закрыть текущую вкладку</li>"
+        "</ul>"
+        "<h3>Редактирование</h3>"
+        "<ul>"
+        "<li><b>Ctrl + Z</b> — Отменить</li>"
+        "<li><b>Ctrl + Y</b> / <b>Ctrl + Shift + Z</b> — Вернуть</li>"
+        "<li><b>Ctrl + X</b> — Вырезать</li>"
+        "<li><b>Ctrl + C</b> — Копировать</li>"
+        "<li><b>Ctrl + V</b> — Вставить</li>"
+        "</ul>"
+        "<h3>Поиск</h3>"
+        "<ul>"
+        "<li><b>Ctrl + F</b> — Перейти к строке поиска</li>"
+        "<li><b>Enter</b> (в строке поиска) — Найти далее</li>"
+        "<li><b>Shift + Enter</b> (в строке поиска) — Найти назад</li>"
+        "</ul>"
+    );
+    shortcutsLayout->addWidget(shortcutsBrowser);
+
+    QWidget *licenseTab = new QWidget();
+    QVBoxLayout *licenseLayout = new QVBoxLayout(licenseTab);
+    QTextBrowser *licenseBrowser = new QTextBrowser();
+    licenseBrowser->setPlainText("This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.\n\nThis program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.\n\nYou should have received a copy of the GNU General Public License along with this program. If not, see <https://www.gnu.org/licenses/>.");
+    licenseLayout->addWidget(licenseBrowser);
+
+    tabs->addTab(infoTab, "Информация");
+    tabs->addTab(shortcutsTab, "Горячие клавиши");
+    tabs->addTab(licenseTab, "Лицензия");
+    
+    layout->addWidget(tabs);
+
+    QPushButton *closeBtn = new QPushButton("Закрыть");
+    closeBtn->setFixedWidth(100);
+    connect(closeBtn, &QPushButton::clicked, &dialog, &QDialog::accept);
+    
+    QHBoxLayout *btnLayout = new QHBoxLayout();
+    btnLayout->addStretch();
+    btnLayout->addWidget(closeBtn);
+    layout->addLayout(btnLayout);
+
+    dialog.exec();
 }

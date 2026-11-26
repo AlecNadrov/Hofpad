@@ -3,24 +3,36 @@
 #include <QDebug>
 #include <QPalette>
 #include <QColor>
+#include <QTranslator>
+#include <QLibraryInfo>
+#include <QIcon>
+#include <QStyleFactory>
 #include "MainWindow.h"
 
 int main(int argc, char *argv[])
 {
     QApplication app(argc, argv);
 
+    app.setStyle(QStyleFactory::create("Fusion"));
+
     QCoreApplication::setApplicationName("Hofpad");
     QCoreApplication::setOrganizationName("Hof");
-    QCoreApplication::setApplicationVersion("0.1.0");
+    QCoreApplication::setApplicationVersion("0.1.1");
     
     QGuiApplication::setDesktopFileName("hofpad.desktop");
+    app.setWindowIcon(QIcon(":/hofpadwhite.png"));
+
+    QTranslator qtTranslator;
+    if (qtTranslator.load("qtbase_ru", QLibraryInfo::path(QLibraryInfo::TranslationsPath))) {
+        app.installTranslator(&qtTranslator);
+    }
 
     QPalette darkPalette;
     darkPalette.setColor(QPalette::Window, QColor(30, 30, 30));
     darkPalette.setColor(QPalette::WindowText, Qt::white);
     darkPalette.setColor(QPalette::Base, QColor(30, 30, 30));
     darkPalette.setColor(QPalette::AlternateBase, QColor(45, 45, 45));
-    darkPalette.setColor(QPalette::ToolTipBase, Qt::white);
+    darkPalette.setColor(QPalette::ToolTipBase, QColor(45, 45, 45)); 
     darkPalette.setColor(QPalette::ToolTipText, Qt::white);
     darkPalette.setColor(QPalette::Text, Qt::white);
     darkPalette.setColor(QPalette::Button, QColor(45, 45, 45));

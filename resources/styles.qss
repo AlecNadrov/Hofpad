@@ -139,3 +139,48 @@ QToolBar QLineEdit {
 QToolBar QLineEdit:focus {
     border: 1px solid #007acc;
 }
+
+QMenu {
+    background-color: #252526;
+    color: #cccccc;
+    border: 1px solid #3c3c3c;
+    padding: 4px;
+}
+QMenu::item {
+    padding: 6px 24px 6px 24px;
+    border-radius: 4px;
+}
+QMenu::item:selected {
+    background-color: #37373d;
+    color: #ffffff;
+}
+QMenu::separator {
+    height: 1px;
+    background: #3c3c3c;
+    margin: 4px 0px;
+}
+
+QFileDialog {
+    background-color: #1e1e1e;
+    color: #d4d4d4;
+}
+QFileDialog QListView, QFileDialog QTreeView {
+    background-color: #1e1e1e;
+    color: #d4d4d4;
+    border: 1px solid #333333;
+}
+QFileDialog QLineEdit, QFileDialog QComboBox {
+    background-color: #2a2d2e;
+    color: #ffffff;
+    border: 1px solid #3c3c3c;
+}
+QFileDialog QPushButton {
+    background-color: #3c3c3c;
+    color: #ffffff;
+    border: 1px solid #555555;
+    padding: 4px 12px;
+    border-radius: 4px;
+}
+QFileDialog QPushButton:hover {
+    background-color: #4c4c4c;
+}
