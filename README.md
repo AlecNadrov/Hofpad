@@ -1,36 +1,29 @@
-Hofpad — a lightweight text editor for Linux.
- 
-Key Features:
- 
-- Tab support for working with multiple files simultaneously.
-- Line numbering and current line highlighting.
-- Text search (with case-sensitive option).
-- Russian Interface
-- Dark design
-- Font settings (selection from monospaced fonts) and word wrap options.
-- Session saving (restoring open tabs on next launch).
+# HOFPAD
 
- 
-Format and System Requirements:
+**HOFPAD** — легковесный текстовый редактор с открытым исходным кодом для операционных систем семейства Linux.
 
- 
-- Format: AppImage (x86_64). Ensures cross-platform compatibility across most modern Linux distributions (Ubuntu, Fedora, Debian, Arch, etc.) without the need to install additional dependencies.
-- Compatibility: Tested on Linux Mint 22.3 and MX Linux 25.3.
-- Tech stack: C++17, Qt 6, CMake.
-- License: GPLv3 (open source).
+Проект ориентирован на создание минималистичного инструмента для работы с текстом, конфигурационными файлами и исходным кодом при минимальном потреблении системных ресурсов.
 
- 
-Installation:
+## Методология разработки
+Разработка ведётся независимым автором с применением современных ИИ-инструментов в качестве ассистента для генерации шаблонного кода, анализа алгоритмов и проверки гипотез. Принятие ключевых технических решений и финальный контроль качества остаются за разработчиком.
 
- 
-1. Download the Hofpad-x86_64.AppImage file using the link below.
-2. Make the file executable and run it. On most modern systems, simply opening the file with a double-click is enough.
-3. If the system blocks the launch due to missing execution permissions, open a terminal in the file's directory and run the following command:
+## Жизненный цикл и релизы
+* **Статус разработки:** проект находится в активной фазе развития. В рамках оптимизации производительности и поиска оптимальных архитектурных решений кодовая база может подвергаться глубокому рефакторингу между версиями.
+* **График релизов:** крупные стабильные версии выпускаются дважды в год — **в марте и сентябре**. Срок поддержки каждого крупного релиза составляет **6 месяцев**.
+
+## Технический стек
+* **Целевая ОС:** Linux
+* **Язык и фреймворк:** [C++ / Qt]
+
+## Установка и сборка
+Скачайте файл Hofpad-x86_64.AppImage в меню Releases.Сделайте файл исполняемым и запустите его. В большинстве современных систем достаточно дважды щёлкнуть по файлу мышью.
+Если система блокирует запуск из-за отсутствия прав на выполнение, откройте терминал в каталоге с файлом и выполните команду:
+   ```
    chmod +x Hofpad-x86_64.AppImage
-   Then launch the application again.
+   ```
+   Затем запустите приложение снова.
 
- 
-Development Plans and Support:
+## Лицензия
+Исходный код **HOFPAD** распространяется на условиях свободной лицензии **GNU General Public License v3.0 (GPLv3)**. 
 
- 
-The project is at an early stage of development. Updates will roll out at a measured pace — two releases per year are planned (in March and September). The current version will be supported for about 4 months.
+Вы вправе свободно использовать, изучать, модифицировать и распространять данное программное обеспечение при условии сохранения открытости исходного кода и аналогичных условий лицензирования для всех производных работ. Подробности приведены в файле [LICENSE](./LICENSE).
